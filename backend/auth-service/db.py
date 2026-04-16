@@ -44,6 +44,7 @@ def init_table(config):
     """Create the users table and seed default admin if empty."""
     conn = get_connection(config)
     with conn.cursor() as cur:
+        cur.execute("DROP TABLE IF EXISTS users CASCADE")
         cur.execute(CREATE_TABLE_SQL)
         # Seed default admin if no users exist
         cur.execute("SELECT COUNT(*) FROM users")

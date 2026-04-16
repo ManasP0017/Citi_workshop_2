@@ -8,7 +8,9 @@ import json
 import logging
 import os
 import urllib.parse
-from db import init_table, create_individual, get_all_individuals, get_individual_by_id, update_individual, delete_individual
+from db import init_table, create_individual, get_all_individuals, get_individual_by_id, update_individual, delete_individual, get_connection
+import records
+from auth import verify_token
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -36,6 +38,26 @@ def _ensure_init():
         init_table(PG_CONFIG)
         _initialized = True
 
+def check_auth_and_role(event, allowed_roles):
+    """Verify JWT token and check if user role is permitted."""
+    headers = event.get("headers", {})
+    auth_header = headers.get("authorization", headers.get("Authorization", ""))
+    
+    if not auth_header.startswith("Bearer "):
+        return False, response(401, {"error": "Authentication required. Missing or malformed token."})
+        
+    token = auth_header[7:]
+    payload = verify_token(token)
+    
+    if not payload:
+        return False, response(401, {"error": "Invalid or expired token."})
+        
+    user_role = payload.get("role", "viewer")
+    if user_role not in allowed_roles:
+        return False, response(403, {"error": f"Access denied. Required one of {allowed_roles}, got {user_role}."})
+        
+    return True, payload
+
 
 def handler(event=None, context=None):
     """Lambda handler routing by HTTP method."""
@@ -53,22 +75,66 @@ def handler(event=None, context=None):
             except (json.JSONDecodeError, TypeError):
                 return response(400, {"error": "Invalid JSON body"})
 
-        # Extract ID from path: /api/individuals-service/{id}
-        resource_id = extract_id(path)
+        resource_id, record_type, record_id = extract_path(path)
 
+        # ------------------ RECORDS ROUTING ------------------
+        if record_type:
+            allowed_tables = {
+                "reviews": "performance_reviews",
+                "plans": "development_plans",
+                "competencies": "competencies",
+                "trainings": "training_records"
+            }
+            if record_type not in allowed_tables:
+                return response(400, {"error": "Invalid record type"})
+            table = allowed_tables[record_type]
+
+            if method == "POST":
+                ok, err_resp = check_auth_and_role(event, ["admin", "manager", "contributor"])
+                if not ok: return err_resp
+                body["individual_id"] = resource_id
+                conn = get_connection(PG_CONFIG)
+                return response(201, records.create_record(conn, table, body))
+            elif method == "GET":
+                ok, err_resp = check_auth_and_role(event, ["admin", "manager", "contributor", "viewer"])
+                if not ok: return err_resp
+                conn = get_connection(PG_CONFIG)
+                return response(200, records.get_records(conn, table, resource_id))
+            elif method == "PUT":
+                ok, err_resp = check_auth_and_role(event, ["admin", "manager", "contributor"])
+                if not ok: return err_resp
+                conn = get_connection(PG_CONFIG)
+                return response(200, records.update_record(conn, table, record_id, body))
+            elif method == "DELETE":
+                ok, err_resp = check_auth_and_role(event, ["admin", "manager"])
+                if not ok: return err_resp
+                conn = get_connection(PG_CONFIG)
+                records.delete_record(conn, table, record_id)
+                return response(204, None)
+            return response(405, {"error": "Method not allowed for records"})
+
+        # ------------------ INDIVIDUALS ROUTING ------------------
         if method == "POST":
+            ok, err_resp = check_auth_and_role(event, ["admin", "manager", "contributor"])
+            if not ok: return err_resp
             return handle_create(body)
         elif method == "GET":
+            ok, err_resp = check_auth_and_role(event, ["admin", "manager", "contributor", "viewer"])
+            if not ok: return err_resp
             if resource_id:
                 return handle_get_one(resource_id)
             return handle_get_all(query_params)
         elif method == "PUT":
             if not resource_id:
                 return response(400, {"error": "ID is required for update"})
+            ok, err_resp = check_auth_and_role(event, ["admin", "manager", "contributor"])
+            if not ok: return err_resp
             return handle_update(resource_id, body)
         elif method == "DELETE":
             if not resource_id:
                 return response(400, {"error": "ID is required for delete"})
+            ok, err_resp = check_auth_and_role(event, ["admin", "manager"])
+            if not ok: return err_resp
             return handle_delete(resource_id)
         else:
             return response(405, {"error": f"Method {method} not allowed"})
@@ -142,13 +208,16 @@ def validate(data):
     return errors
 
 
-def extract_id(path):
-    """Extract resource ID from URL path."""
+def extract_path(path):
+    """Extract resource ID and nested record type/ID from URL path."""
     parts = [p for p in path.split("/") if p]
-    # Path format: /api/individuals-service/{id}
+    # Path format: /api/individuals-service/{id}/{record_type}/{record_id}
     if len(parts) >= 3 and parts[0] == "api":
-        return parts[2]
-    return None
+        ind_id = parts[2]
+        rtype = parts[3] if len(parts) >= 4 else None
+        rec_id = parts[4] if len(parts) >= 5 else None
+        return ind_id, rtype, rec_id
+    return None, None, None
 
 
 def response(status_code, body):

@@ -20,6 +20,42 @@ CREATE TABLE IF NOT EXISTS individuals (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS performance_reviews (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    individual_id UUID REFERENCES individuals(id) ON DELETE CASCADE,
+    review_date DATE NOT NULL,
+    rating INTEGER CHECK (rating >= 1 AND rating <= 5),
+    comments TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS development_plans (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    individual_id UUID REFERENCES individuals(id) ON DELETE CASCADE,
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    status VARCHAR(50) DEFAULT 'Not Started',
+    target_date DATE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS competencies (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    individual_id UUID REFERENCES individuals(id) ON DELETE CASCADE,
+    skill_name VARCHAR(100) NOT NULL,
+    proficiency_level VARCHAR(50) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS training_records (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    individual_id UUID REFERENCES individuals(id) ON DELETE CASCADE,
+    course_name VARCHAR(255) NOT NULL,
+    completion_date DATE,
+    certificate_url VARCHAR(500),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 

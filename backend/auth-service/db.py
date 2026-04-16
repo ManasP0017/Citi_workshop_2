@@ -27,6 +27,13 @@ DEFAULT_ADMIN = {
     "role": "admin",
 }
 
+# Default manager credentials
+DEFAULT_MANAGER = {
+    "username": "manager",
+    "email": "manager@acme.com",
+    "password": "manager123",
+    "role": "manager",
+}
 
 def get_connection(config):
     """Get or create a PostgreSQL connection with connection pooling."""
@@ -41,27 +48,37 @@ def get_connection(config):
 
 
 def init_table(config):
-    """Create the users table and seed default admin if empty."""
+    """Create the users table and seed default users if empty."""
     conn = get_connection(config)
     with conn.cursor() as cur:
-        cur.execute("DROP TABLE IF EXISTS users CASCADE")
+        # Note: DROP TABLE statement removed to prevent data wipe on Lambda cold-starts
         cur.execute(CREATE_TABLE_SQL)
-        # Seed default admin if no users exist
-        cur.execute("SELECT COUNT(*) FROM users")
-        count = cur.fetchone()[0]
-        if count == 0:
-            password_hash = hash_password(DEFAULT_ADMIN["password"])
+        
+        # Seed default admin and manager
+        for default_user in [DEFAULT_ADMIN, DEFAULT_MANAGER]:
+            password_hash = hash_password(default_user["password"])
             cur.execute(
                 """INSERT INTO users (username, email, password_hash, role)
                    VALUES (%s, %s, %s, %s)
                    ON CONFLICT (username) DO NOTHING""",
                 (
-                    DEFAULT_ADMIN["username"],
-                    DEFAULT_ADMIN["email"],
+                    default_user["username"],
+                    default_user["email"],
                     password_hash,
-                    DEFAULT_ADMIN["role"],
+                    default_user["role"],
                 ),
             )
+            
+            try:
+                first_name = default_user["username"].capitalize()
+                cur.execute(
+                    """INSERT INTO individuals (first_name, last_name, email, role, is_direct_staff)
+                       VALUES (%s, %s, %s, %s, %s)
+                       ON CONFLICT (email) DO NOTHING""",
+                    (first_name, "User", default_user["email"], default_user["role"], True)
+                )
+            except Exception as e:
+                print(f"Warning: Could not seed individual record for default user {default_user['username']}: {e}")
 
 
 def get_user_by_username(config, username):
@@ -104,6 +121,22 @@ def create_user(config, data):
             ),
         )
         row = cur.fetchone()
+        
+        # Dual-write into the individuals table so the new profile appears there natively
+        try:
+            full_name_parts = data["username"].strip().split()
+            first_name = full_name_parts[0] if full_name_parts else "Unknown"
+            last_name = " ".join(full_name_parts[1:]) if len(full_name_parts) > 1 else ""
+            
+            cur.execute(
+                """INSERT INTO individuals (first_name, last_name, email, role, is_direct_staff)
+                   VALUES (%s, %s, %s, %s, %s)
+                   ON CONFLICT (email) DO NOTHING""",
+                (first_name, last_name, data["email"], data.get("role", "viewer"), True)
+            )
+        except Exception as e:
+            print(f"Warning: Could not sync individual record for user {data['username']}: {e}")
+            
         return row_to_dict(row)
 
 

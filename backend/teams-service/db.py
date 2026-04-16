@@ -4,6 +4,7 @@ Handles CRUD operations and table auto-creation.
 """
 
 from psycopg import connect
+import uuid
 
 PG_CONN = None
 
@@ -20,6 +21,13 @@ CREATE TABLE IF NOT EXISTS teams (
 );
 """
 
+# Migration: add columns that may be missing from older table versions
+MIGRATE_SQL = [
+    "ALTER TABLE teams ADD COLUMN IF NOT EXISTS leader_id UUID;",
+    "ALTER TABLE teams ADD COLUMN IF NOT EXISTS org_leader_id UUID;",
+    "ALTER TABLE teams ALTER COLUMN id SET DEFAULT gen_random_uuid();",
+]
+
 
 def get_connection(config):
     """Get or create a PostgreSQL connection with connection pooling."""
@@ -34,21 +42,28 @@ def get_connection(config):
 
 
 def init_table(config):
-    """Create the teams table if it doesn't exist."""
+    """Create the teams table if it doesn't exist, then apply migrations."""
     conn = get_connection(config)
     with conn.cursor() as cur:
         cur.execute(CREATE_TABLE_SQL)
+        for sql in MIGRATE_SQL:
+            try:
+                cur.execute(sql)
+            except Exception:
+                pass  # Column already exists or other harmless error
 
 
 def create_team(config, data):
     """Create a new team record."""
     conn = get_connection(config)
+    team_id = str(uuid.uuid4())
     with conn.cursor() as cur:
         cur.execute(
-            """INSERT INTO teams (name, description, location, leader_id, org_leader_id)
-               VALUES (%s, %s, %s, %s, %s)
+            """INSERT INTO teams (id, name, description, location, leader_id, org_leader_id)
+               VALUES (%s, %s, %s, %s, %s, %s)
                RETURNING id, name, description, location, leader_id, org_leader_id, created_at, updated_at""",
             (
+                team_id,
                 data["name"],
                 data.get("description"),
                 data.get("location"),
@@ -73,7 +88,7 @@ def get_all_teams(config):
                    SELECT team_id, COUNT(*) as member_count
                    FROM individuals
                    GROUP BY team_id
-               ) m ON t.id = m.team_id
+               ) m ON t.id::text = m.team_id::text
                ORDER BY t.name"""
         )
         rows = cur.fetchall()
@@ -93,7 +108,7 @@ def get_team_by_id(config, team_id):
                    SELECT team_id, COUNT(*) as member_count
                    FROM individuals
                    GROUP BY team_id
-               ) m ON t.id = m.team_id
+               ) m ON t.id::text = m.team_id::text
                WHERE t.id = %s""",
             (team_id,),
         )

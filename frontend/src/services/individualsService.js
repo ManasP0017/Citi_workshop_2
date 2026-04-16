@@ -27,6 +27,23 @@ export const individualsService = {
   async delete(id) {
     await api.delete(`${ENDPOINT}/${id}`);
   },
+
+  // ---------------- RECORDS API ---------------- //
+  async getRecords(id, type) {
+    const response = await api.get(`${ENDPOINT}/${id}/${type}`);
+    return response.data;
+  },
+  async createRecord(id, type, data) {
+    const response = await api.post(`${ENDPOINT}/${id}/${type}`, data);
+    return response.data;
+  },
+  async updateRecord(id, type, recordId, data) {
+    const response = await api.put(`${ENDPOINT}/${id}/${type}/${recordId}`, data);
+    return response.data;
+  },
+  async deleteRecord(id, type, recordId) {
+    await api.delete(`${ENDPOINT}/${id}/${type}/${recordId}`);
+  },
 };
 
 export default individualsService;

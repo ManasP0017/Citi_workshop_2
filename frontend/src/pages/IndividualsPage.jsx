@@ -2,110 +2,95 @@ import { useState, useEffect } from 'react';
 import {
   Box, Button, Typography, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, Paper, IconButton, Dialog, DialogTitle, DialogContent,
-  DialogActions, TextField, Snackbar, Alert, Chip, CircularProgress,
-  FormControl, InputLabel, Select, MenuItem, Switch, FormControlLabel,
+  DialogActions, TextField, Snackbar, Alert, LinearProgress,
   Tooltip, InputAdornment, TablePagination,
 } from '@mui/material';
 import {
-  Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon,
-  Search as SearchIcon, People as PeopleIcon, FilterList as FilterIcon,
+  Add as AddIcon,
+  Edit as EditIcon,
+  Delete as DeleteIcon,
+  Search as SearchIcon,
+  People as PeopleIcon,
+  Visibility as VisibilityIcon,
 } from '@mui/icons-material';
 import individualsService from '../services/individualsService';
-import teamsService from '../services/teamsService';
 import authService from '../services/authService';
 import ConfirmDialog from '../components/ConfirmDialog';
+import IndividualDetailsDialog from '../components/IndividualDetailsDialog';
 
 const EMPTY_FORM = {
-  first_name: '', last_name: '', email: '', role: '', location: '', team_id: '', is_direct_staff: true,
+  first_name: '',
+  last_name: '',
+  email: '',
+  role: '',
 };
 
 export default function IndividualsPage() {
   const [individuals, setIndividuals] = useState([]);
-  const [teams, setTeams] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
-  const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [detailsTarget, setDetailsTarget] = useState(null);
   const [snack, setSnack] = useState({ open: false, message: '', severity: 'success' });
   const [search, setSearch] = useState('');
-  const [filterTeam, setFilterTeam] = useState('');
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => {
+    loadData();
+  }, []);
 
   const loadData = async () => {
     try {
-      const [ind, t] = await Promise.all([
-        individualsService.getAll(),
-        teamsService.getAll().catch(() => []),
-      ]);
-      setIndividuals(ind);
-      setTeams(t);
-    } catch (err) {
-      showSnack('Failed to load data', 'error');
+      const data = await individualsService.getAll();
+      setIndividuals(data);
+    } catch {
+      showSnack('Failed to load individuals', 'error');
     } finally {
       setLoading(false);
     }
   };
 
-  const filtered = individuals.filter(i => {
-    const matchesSearch = !search || 
-      `${i.first_name} ${i.last_name} ${i.email} ${i.role}`.toLowerCase().includes(search.toLowerCase());
-    const matchesTeam = !filterTeam || i.team_id === filterTeam;
-    return matchesSearch && matchesTeam;
-  });
+  const filtered = individuals.filter((i) =>
+    !search ||
+    `${i.first_name} ${i.last_name} ${i.email}`
+      .toLowerCase()
+      .includes(search.toLowerCase())
+  );
 
-  const handleOpen = (individual = null) => {
-    if (individual) {
-      setEditingId(individual.id);
+  const handleOpen = (person = null) => {
+    if (person) {
+      setEditingId(person.id);
       setForm({
-        first_name: individual.first_name || '',
-        last_name: individual.last_name || '',
-        email: individual.email || '',
-        role: individual.role || '',
-        location: individual.location || '',
-        team_id: individual.team_id || '',
-        is_direct_staff: individual.is_direct_staff !== false,
+        first_name: person.first_name || '',
+        last_name: person.last_name || '',
+        email: person.email || '',
+        role: person.role || '',
       });
     } else {
       setEditingId(null);
       setForm(EMPTY_FORM);
     }
-    setErrors({});
     setDialogOpen(true);
   };
 
-  const validate = () => {
-    const e = {};
-    if (!form.first_name.trim()) e.first_name = 'Required';
-    if (!form.last_name.trim()) e.last_name = 'Required';
-    if (!form.email.trim()) e.email = 'Required';
-    else if (!form.email.includes('@')) e.email = 'Invalid email';
-    setErrors(e);
-    return Object.keys(e).length === 0;
-  };
-
   const handleSave = async () => {
-    if (!validate()) return;
     setSaving(true);
     try {
-      const data = { ...form, team_id: form.team_id || null };
       if (editingId) {
-        await individualsService.update(editingId, data);
-        showSnack('Individual updated successfully');
+        await individualsService.update(editingId, form);
+        showSnack('Individual updated');
       } else {
-        await individualsService.create(data);
-        showSnack('Individual created successfully');
+        await individualsService.create(form);
+        showSnack('Individual created');
       }
       setDialogOpen(false);
       loadData();
-    } catch (err) {
-      const msg = err.response?.data?.error || 'Operation failed';
-      showSnack(msg, 'error');
+    } catch {
+      showSnack('Operation failed', 'error');
     } finally {
       setSaving(false);
     }
@@ -114,200 +99,289 @@ export default function IndividualsPage() {
   const handleDelete = async () => {
     try {
       await individualsService.delete(deleteTarget);
-      showSnack('Individual deleted');
       setDeleteTarget(null);
+      showSnack('Individual deleted');
       loadData();
     } catch {
       showSnack('Delete failed', 'error');
     }
   };
 
-  const showSnack = (message, severity = 'success') => setSnack({ open: true, message, severity });
-  const getTeamName = (teamId) => teams.find(t => t.id === teamId)?.name || '—';
+  const showSnack = (message, severity = 'success') =>
+    setSnack({ open: true, message, severity });
 
   return (
-    <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, flexWrap: 'wrap', gap: 2 }}>
-        <Box>
-          <Typography variant="h5" sx={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: 1 }}>
-            <PeopleIcon sx={{ color: '#667eea' }} /> Individuals
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Manage team members and their details
-          </Typography>
-        </Box>
-        {authService.canCreate() && (
-          <Button variant="contained" startIcon={<AddIcon />} onClick={() => handleOpen()}
+    <Box className="page-fade-in">
+
+      {/* HEADER */}
+      <Paper
+        sx={{
+          mb: 4,
+          p: 3,
+          borderRadius: 3,
+          borderLeft: '6px solid #0F766E',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 2,
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <Box
             sx={{
-              borderRadius: 2, textTransform: 'none', fontWeight: 600, px: 3,
-              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-              boxShadow: '0 4px 14px rgba(102,126,234,0.4)',
+              width: 48,
+              height: 48,
+              borderRadius: '12px',
+              background: '#0F766E',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
             }}
           >
-            Add Individual
-          </Button>
-        )}
-      </Box>
+            <PeopleIcon sx={{ color: '#fff' }} />
+          </Box>
 
-      <Paper sx={{ borderRadius: 3, overflow: 'hidden' }}>
-        <Box sx={{ p: 2, display: 'flex', gap: 2, flexWrap: 'wrap', borderBottom: '1px solid', borderColor: 'divider' }}>
-          <TextField size="small" placeholder="Search by name, email, role..." value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(0); }}
-            InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon sx={{ color: 'text.disabled' }} /></InputAdornment> }}
-            sx={{ minWidth: 280, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-          />
-          <FormControl size="small" sx={{ minWidth: 160 }}>
-            <InputLabel>Filter by Team</InputLabel>
-            <Select value={filterTeam} label="Filter by Team" onChange={(e) => { setFilterTeam(e.target.value); setPage(0); }}
-              sx={{ borderRadius: 2 }}
-            >
-              <MenuItem value="">All Teams</MenuItem>
-              {teams.map(t => <MenuItem key={t.id} value={t.id}>{t.name}</MenuItem>)}
-            </Select>
-          </FormControl>
+          <Box>
+            <Typography variant="h5" fontWeight={800}>
+              Members
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              View and manage individual member profiles
+            </Typography>
+          </Box>
         </Box>
 
+        {authService.canCreate() && (
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => handleOpen()}
+            sx={{
+              borderRadius: 2,
+              px: 3,
+              fontWeight: 600,
+              background: '#0F766E',
+              boxShadow: 'none',
+              '&:hover': {
+                boxShadow: '2px 2px 0px 0px #134E4A',
+                transform: 'translate(-1px, -1px)',
+              },
+            }}
+          >
+            Add Member
+          </Button>
+        )}
+      </Paper>
+
+      {/* SEARCH */}
+      <Paper
+        sx={{
+          p: 2.5,
+          mb: 2,
+          borderRadius: 3,
+          border: '1px solid #E2E8F0',
+        }}
+      >
+        <TextField
+          size="small"
+          placeholder="Type to search..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon sx={{ color: 'text.disabled' }} />
+              </InputAdornment>
+            ),
+          }}
+          sx={{
+            minWidth: 280,
+            '& .MuiOutlinedInput-root': {
+              borderRadius: 2.5,
+            },
+          }}
+        />
+      </Paper>
+
+      {/* TABLE */}
+      <Paper
+        sx={{
+          borderRadius: 4,
+          overflow: 'hidden',
+          border: '1px solid #E2E8F0',
+        }}
+      >
         {loading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', p: 6 }}><CircularProgress /></Box>
+          <LinearProgress aria-label="Fetching data..." sx={{ mx: 2, my: 4 }} />
         ) : (
           <>
             <TableContainer>
               <Table>
                 <TableHead>
-                  <TableRow sx={{ '& th': { fontWeight: 700, bgcolor: '#f8fafc', color: 'text.secondary', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: 0.5 } }}>
-                    <TableCell>Name</TableCell>
-                    <TableCell>Email</TableCell>
-                    <TableCell>Role</TableCell>
-                    <TableCell>Location</TableCell>
-                    <TableCell>Team</TableCell>
-                    <TableCell>Staff Type</TableCell>
-                    {(authService.canUpdate() || authService.canDelete()) && <TableCell align="right">Actions</TableCell>}
+                  <TableRow>
+                    {['Name', 'Email', 'Role'].map((h) => (
+                      <TableCell
+                        key={h}
+                        sx={{
+                          fontWeight: 700,
+                          bgcolor: '#F0FDFA',
+                          fontSize: '0.72rem',
+                          textTransform: 'uppercase',
+                        }}
+                      >
+                        {h}
+                      </TableCell>
+                    ))}
+                    <TableCell align="right" sx={{ fontWeight: 700, bgcolor: '#F0FDFA' }}>
+                      Actions
+                    </TableCell>
                   </TableRow>
                 </TableHead>
+
                 <TableBody>
-                  {filtered.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={7} sx={{ textAlign: 'center', py: 6 }}>
-                        <Typography color="text.secondary">No individuals found</Typography>
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    filtered.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage).map((ind) => (
-                      <TableRow key={ind.id} hover sx={{ '&:hover': { bgcolor: '#f8fafc' }, transition: 'background 0.2s' }}>
+                  {filtered
+                    .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                    .map((person) => (
+                      <TableRow
+                        key={person.id}
+                        hover
+                        sx={{
+                          transition: 'all 0.2s',
+                          '&:hover': { bgcolor: '#F0FDFA' },
+                        }}
+                      >
                         <TableCell>
-                          <Typography variant="subtitle2" fontWeight={600}>
-                            {ind.first_name} {ind.last_name}
+                          <Typography fontWeight={600}>
+                            {person.first_name} {person.last_name}
                           </Typography>
                         </TableCell>
-                        <TableCell><Typography variant="body2" color="text.secondary">{ind.email}</Typography></TableCell>
-                        <TableCell>{ind.role && <Chip label={ind.role} size="small" sx={{ borderRadius: 1.5, fontWeight: 500 }} />}</TableCell>
-                        <TableCell><Typography variant="body2" color="text.secondary">{ind.location || '—'}</Typography></TableCell>
-                        <TableCell><Typography variant="body2" color="text.secondary">{getTeamName(ind.team_id)}</Typography></TableCell>
+
+                        <TableCell>{person.email}</TableCell>
+
                         <TableCell>
-                          <Chip size="small" label={ind.is_direct_staff ? 'Direct' : 'Non-Direct'}
+                          <Typography
                             sx={{
-                              borderRadius: 1.5, fontWeight: 500, fontSize: '0.7rem',
-                              bgcolor: ind.is_direct_staff ? '#dcfce7' : '#fef3c7',
-                              color: ind.is_direct_staff ? '#16a34a' : '#d97706',
+                              bgcolor: '#EEF2FF',
+                              px: 1.5,
+                              py: 0.4,
+                              borderRadius: 1.5,
+                              fontSize: '0.78rem',
+                              display: 'inline-block',
                             }}
-                          />
+                          >
+                            {person.role || '—'}
+                          </Typography>
                         </TableCell>
-                        {(authService.canUpdate() || authService.canDelete()) && (
-                          <TableCell align="right">
-                            {authService.canUpdate() && (
-                              <Tooltip title="Edit">
-                                <IconButton size="small" onClick={() => handleOpen(ind)} sx={{ color: '#667eea' }}>
-                                  <EditIcon fontSize="small" />
-                                </IconButton>
-                              </Tooltip>
-                            )}
-                            {authService.canDelete() && (
-                              <Tooltip title="Delete">
-                                <IconButton size="small" onClick={() => setDeleteTarget(ind.id)} sx={{ color: '#ef4444' }}>
-                                  <DeleteIcon fontSize="small" />
-                                </IconButton>
-                              </Tooltip>
-                            )}
-                          </TableCell>
-                        )}
+
+                        <TableCell align="right">
+                          <Tooltip title="View Performance & Records">
+                            <IconButton onClick={() => setDetailsTarget(person)}>
+                              <VisibilityIcon />
+                            </IconButton>
+                          </Tooltip>
+
+                          <Tooltip title="Modify">
+                            <IconButton onClick={() => handleOpen(person)} sx={{ bgcolor: '#F0FDFA', color: '#0F766E' }}>
+                              <EditIcon />
+                            </IconButton>
+                          </Tooltip>
+
+                          <Tooltip title="Remove">
+                            <IconButton onClick={() => setDeleteTarget(person.id)} sx={{ bgcolor: '#FFF1F2', color: '#BE123C' }}>
+                              <DeleteIcon />
+                            </IconButton>
+                          </Tooltip>
+                        </TableCell>
                       </TableRow>
-                    ))
-                  )}
+                    ))}
                 </TableBody>
               </Table>
             </TableContainer>
-            <TablePagination component="div" count={filtered.length} page={page} rowsPerPage={rowsPerPage}
-              onPageChange={(_, p) => setPage(p)} onRowsPerPageChange={(e) => { setRowsPerPage(+e.target.value); setPage(0); }}
-              rowsPerPageOptions={[5, 10, 25]} />
+
+            <TablePagination
+              component="div"
+              count={filtered.length}
+              page={page}
+              rowsPerPage={rowsPerPage}
+              onPageChange={(_, p) => setPage(p)}
+              onRowsPerPageChange={(e) => {
+                setRowsPerPage(+e.target.value);
+                setPage(0);
+              }}
+            />
           </>
         )}
       </Paper>
 
-      {/* Create/Edit Dialog */}
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth
-        PaperProps={{ sx: { borderRadius: 3 } }}
-      >
-        <DialogTitle sx={{ fontWeight: 700 }}>{editingId ? 'Edit Individual' : 'Add Individual'}</DialogTitle>
-        <DialogContent sx={{ pt: '16px !important' }}>
-          <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
-            <TextField label="First Name" value={form.first_name} required
-              onChange={(e) => setForm({ ...form, first_name: e.target.value })}
-              error={!!errors.first_name} helperText={errors.first_name}
-              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-            />
-            <TextField label="Last Name" value={form.last_name} required
-              onChange={(e) => setForm({ ...form, last_name: e.target.value })}
-              error={!!errors.last_name} helperText={errors.last_name}
-              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-            />
-          </Box>
-          <TextField fullWidth label="Email" value={form.email} required sx={{ mt: 2, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-            onChange={(e) => setForm({ ...form, email: e.target.value })}
-            error={!!errors.email} helperText={errors.email}
+      {/* DIALOG */}
+      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ fontWeight: 800 }}>
+          {editingId ? 'Edit Individual' : 'Add Individual'}
+        </DialogTitle>
+
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+          <TextField
+            fullWidth
+            label="First Name"
+            value={form.first_name}
+            onChange={(e) => setForm({ ...form, first_name: e.target.value })}
           />
-          <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mt: 2 }}>
-            <TextField label="Role" value={form.role}
-              onChange={(e) => setForm({ ...form, role: e.target.value })}
-              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-            />
-            <TextField label="Location" value={form.location}
-              onChange={(e) => setForm({ ...form, location: e.target.value })}
-              sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-            />
-          </Box>
-          <FormControl fullWidth sx={{ mt: 2, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}>
-            <InputLabel>Team</InputLabel>
-            <Select value={form.team_id} label="Team"
-              onChange={(e) => setForm({ ...form, team_id: e.target.value })}
-            >
-              <MenuItem value="">No Team</MenuItem>
-              {teams.map(t => <MenuItem key={t.id} value={t.id}>{t.name}</MenuItem>)}
-            </Select>
-          </FormControl>
-          <FormControlLabel sx={{ mt: 1 }}
-            control={<Switch checked={form.is_direct_staff} onChange={(e) => setForm({ ...form, is_direct_staff: e.target.checked })} />}
-            label="Direct Staff"
+
+          <TextField
+            fullWidth
+            label="Last Name"
+            value={form.last_name}
+            onChange={(e) => setForm({ ...form, last_name: e.target.value })}
+          />
+
+          <TextField
+            fullWidth
+            label="Email"
+            value={form.email}
+            onChange={(e) => setForm({ ...form, email: e.target.value })}
+          />
+
+          <TextField
+            fullWidth
+            label="Role"
+            value={form.role}
+            onChange={(e) => setForm({ ...form, role: e.target.value })}
           />
         </DialogContent>
+
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setDialogOpen(false)} sx={{ borderRadius: 2 }}>Cancel</Button>
-          <Button variant="contained" onClick={handleSave} disabled={saving}
-            sx={{ borderRadius: 2, background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}
-          >
-            {saving ? <CircularProgress size={20} sx={{ color: '#fff' }} /> : (editingId ? 'Update' : 'Create')}
+          <Button onClick={() => setDialogOpen(false)}>Dismiss</Button>
+          <Button variant="contained" onClick={handleSave} disabled={saving}>
+            {saving ? <LinearProgress sx={{ width: 60, height: 3 }} /> : 'Confirm'}
           </Button>
         </DialogActions>
       </Dialog>
 
-      <ConfirmDialog open={!!deleteTarget} title="Delete Individual"
-        message="Are you sure you want to delete this individual? This action cannot be undone."
-        onConfirm={handleDelete} onCancel={() => setDeleteTarget(null)} />
+      {/* DELETE CONFIRM */}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Delete Individual"
+        message="Are you sure you want to delete this individual?"
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
 
-      <Snackbar open={snack.open} autoHideDuration={4000} onClose={() => setSnack({ ...snack, open: false })}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}>
-        <Alert severity={snack.severity} onClose={() => setSnack({ ...snack, open: false })} sx={{ borderRadius: 2 }}>
-          {snack.message}
-        </Alert>
+      {/* DETAILS DASHBOARD */}
+      <IndividualDetailsDialog
+        open={!!detailsTarget}
+        onClose={() => setDetailsTarget(null)}
+        person={detailsTarget}
+      />
+
+      {/* SNACKBAR */}
+      <Snackbar
+        open={snack.open}
+        autoHideDuration={4000}
+        onClose={() => setSnack({ ...snack, open: false })}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+      >
+        <Alert severity={snack.severity}>{snack.message}</Alert>
       </Snackbar>
     </Box>
   );

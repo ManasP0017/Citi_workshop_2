@@ -8,6 +8,7 @@ import json
 import logging
 import os
 from db import init_table, create_team, get_all_teams, get_team_by_id, update_team, delete_team
+from auth import verify_token
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -33,6 +34,26 @@ def _ensure_init():
         init_table(PG_CONFIG)
         _initialized = True
 
+def check_auth_and_role(event, allowed_roles):
+    """Verify JWT token and check if user role is permitted."""
+    headers = event.get("headers", {})
+    auth_header = headers.get("authorization", headers.get("Authorization", ""))
+    
+    if not auth_header.startswith("Bearer "):
+        return False, response(401, {"error": "Authentication required. Missing or malformed token."})
+        
+    token = auth_header[7:]
+    payload = verify_token(token)
+    
+    if not payload:
+        return False, response(401, {"error": "Invalid or expired token."})
+        
+    user_role = payload.get("role", "viewer")
+    if user_role not in allowed_roles:
+        return False, response(403, {"error": f"Access denied. Required one of {allowed_roles}, got {user_role}."})
+        
+    return True, payload
+
 
 def handler(event=None, context=None):
     """Lambda handler routing by HTTP method."""
@@ -53,18 +74,30 @@ def handler(event=None, context=None):
         resource_id = extract_id(path)
 
         if method == "POST":
+            # Contributor, Manager, Admin
+            ok, err_resp = check_auth_and_role(event, ["admin", "manager", "contributor"])
+            if not ok: return err_resp
             return handle_create(body)
         elif method == "GET":
+            # Viewer, Contributor, Manager, Admin
+            ok, err_resp = check_auth_and_role(event, ["admin", "manager", "contributor", "viewer"])
+            if not ok: return err_resp
             if resource_id:
                 return handle_get_one(resource_id)
             return handle_get_all()
         elif method == "PUT":
             if not resource_id:
                 return response(400, {"error": "ID is required for update"})
+            # Contributor, Manager, Admin
+            ok, err_resp = check_auth_and_role(event, ["admin", "manager", "contributor"])
+            if not ok: return err_resp
             return handle_update(resource_id, body)
         elif method == "DELETE":
             if not resource_id:
                 return response(400, {"error": "ID is required for delete"})
+            # Admin, Manager only
+            ok, err_resp = check_auth_and_role(event, ["admin", "manager"])
+            if not ok: return err_resp
             return handle_delete(resource_id)
         else:
             return response(405, {"error": f"Method {method} not allowed"})

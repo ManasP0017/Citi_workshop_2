@@ -1,17 +1,21 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Box, Card, CardContent, TextField, Button, Typography, Alert,
-  InputAdornment, IconButton, Tabs, Tab, CircularProgress,
+  Box, TextField, Button, Typography, Alert,
+  InputAdornment, IconButton, CircularProgress,
 } from '@mui/material';
 import {
-  Visibility, VisibilityOff, Groups as GroupsIcon,
-  Email as EmailIcon, Person as PersonIcon, Lock as LockIcon,
+  Visibility, VisibilityOff,
+  Email as EmailIcon,
+  Lock as LockIcon,
+  Person as PersonIcon,
+  Bolt as BoltIcon,
+  Groups as GroupsIcon,
 } from '@mui/icons-material';
 import authService from '../services/authService';
 
 export default function LoginPage() {
-  const [tab, setTab] = useState(0);
+  const [mode, setMode] = useState('login'); // login | register
   const [form, setForm] = useState({ username: '', email: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
@@ -25,150 +29,242 @@ export default function LoginPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
     setLoading(true);
+    setError('');
+
     try {
-      if (tab === 0) {
+      if (mode === 'login') {
         await authService.login(form.username, form.password);
       } else {
-        if (!form.email) { setError('Email is required'); setLoading(false); return; }
+        if (!form.email) {
+          setError('Email is required');
+          setLoading(false);
+          return;
+        }
         await authService.register(form.username, form.email, form.password);
       }
       navigate('/');
     } catch (err) {
-      const msg = err.response?.data?.error || err.response?.data?.message || 'Something went wrong';
-      setError(msg);
+      setError(err.response?.data?.error || 'Something went wrong');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Box sx={{
-      minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%)',
-      p: 2,
-    }}>
-      <Box sx={{
-        position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, overflow: 'hidden',
-        '&::before': {
-          content: '""', position: 'absolute', width: 500, height: 500,
-          borderRadius: '50%', background: 'rgba(102, 126, 234, 0.15)',
-          top: '-10%', right: '-5%', filter: 'blur(60px)',
-        },
-        '&::after': {
-          content: '""', position: 'absolute', width: 400, height: 400,
-          borderRadius: '50%', background: 'rgba(118, 75, 162, 0.15)',
-          bottom: '-10%', left: '-5%', filter: 'blur(60px)',
-        },
-      }} />
+    <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: '#F8F7F4' }}>
 
-      <Card sx={{
-        width: '100%', maxWidth: 420, borderRadius: 4, position: 'relative',
-        bgcolor: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(20px)',
-        boxShadow: '0 25px 60px rgba(0,0,0,0.3)',
+      {/* LEFT SIDE */}
+      <Box sx={{
+        flex: 1,
+        display: { xs: 'none', md: 'flex' },
+        flexDirection: 'column',
+        justifyContent: 'center',
+        px: 8,
+        background: 'linear-gradient(135deg, #F0FDFA 0%, #CCFBF1 100%)',
+        position: 'relative',
+        overflow: 'hidden',
+      }}>
+        {/* Decorative elements */}
+        <Box sx={{
+          position: 'absolute', top: -100, right: -100,
+          width: 400, height: 400, borderRadius: '50%',
+          background: 'linear-gradient(135deg, rgba(15,118,110,0.15) 0%, rgba(20,184,166,0.15) 100%)',
+          filter: 'blur(60px)',
+        }} />
+        <Box sx={{
+          position: 'absolute', bottom: -100, left: -100,
+          width: 400, height: 400, borderRadius: '50%',
+          background: 'linear-gradient(135deg, rgba(99,102,241,0.12) 0%, rgba(15,118,110,0.12) 100%)',
+          filter: 'blur(60px)',
+        }} />
+
+        <Box sx={{ maxWidth: 500, position: 'relative', zIndex: 1 }}>
+          <Box sx={{
+            width: 64, height: 64, borderRadius: 4,
+            mb: 4,
+            background: mode === 'login'
+              ? '#0F766E'
+              : '#6366F1',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: '0 10px 25px rgba(15,118,110,0.3)',
+          }}>
+            {mode === 'login'
+              ? <BoltIcon sx={{ color: '#fff', fontSize: 32 }} />
+              : <GroupsIcon sx={{ color: '#fff', fontSize: 32 }} />}
+          </Box>
+
+          <Typography variant="h3" sx={{ fontWeight: 800, color: '#0F172A', mb: 2, letterSpacing: '-0.5px' }}>
+            {mode === 'login' ? 'TeamHub' : 'Join TeamHub'}
+          </Typography>
+
+          <Typography sx={{ color: '#475569', mb: 5, fontSize: '1.1rem', lineHeight: 1.6 }}>
+            {mode === 'login'
+              ? 'Unlock deep organizational insights and streamline your squad performance.'
+              : 'Empower your squad with collaboration and structured management.'}
+          </Typography>
+
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {(mode === 'login'
+            ? ['Secure Authentication', 'Real-time Business Intelligence', 'Global Synchronization']
+            : ['Real-time telemetry', 'Leadership tools', 'Enterprise security']
+          ).map((item) => (
+            <Box key={item} sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 2,
+              px: 3,
+              py: 2,
+              borderRadius: 3,
+              bgcolor: 'rgba(255,255,255,0.6)',
+              border: '1px solid rgba(255,255,255,0.8)',
+              backdropFilter: 'blur(10px)',
+            }}>
+              <Box sx={{
+                width: 8, height: 8, borderRadius: '50%',
+                background: '#0F766E'
+              }} />
+              <Typography sx={{ color: '#1E293B', fontWeight: 600 }}>
+                {item}
+              </Typography>
+            </Box>
+          ))}
+          </Box>
+        </Box>
+      </Box>
+
+      {/* RIGHT SIDE */}
+      <Box sx={{
+        flex: 1,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        px: { xs: 3, md: 8 },
+        bgcolor: '#FFFFFF',
       }}>
         <Box sx={{
-          p: 4, pb: 2, textAlign: 'center',
-          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-          borderRadius: '16px 16px 0 0',
+          width: '100%',
+          maxWidth: 440,
         }}>
-          <Box sx={{
-            width: 64, height: 64, borderRadius: 3, mx: 'auto', mb: 2,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            bgcolor: 'rgba(255,255,255,0.2)', backdropFilter: 'blur(10px)',
-          }}>
-            <GroupsIcon sx={{ fontSize: 36, color: '#fff' }} />
-          </Box>
-          <Typography variant="h5" sx={{ color: '#fff', fontWeight: 800, mb: 0.5 }}>
-            ACME TeamHub
+          <Typography variant="h4" sx={{ color: '#1E293B', fontWeight: 800, mb: 1, letterSpacing: '-0.5px' }}>
+            {mode === 'login' ? 'Good to see you' : 'Create Profile'}
           </Typography>
-          <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.7)' }}>
-            Team Management Platform
+
+          <Typography sx={{ color: '#64748B', mb: 4 }}>
+            {mode === 'login'
+              ? 'Enter your credentials to access your account.'
+              : 'Begin your journey with TeamHub today.'}
           </Typography>
-        </Box>
 
-        <CardContent sx={{ p: 4 }}>
-          <Tabs value={tab} onChange={(_, v) => { setTab(v); setError(''); }}
-            variant="fullWidth" sx={{
-              mb: 3, '& .MuiTab-root': { borderRadius: 2, fontWeight: 600, textTransform: 'none' },
-              '& .Mui-selected': { color: '#667eea' },
-              '& .MuiTabs-indicator': { bgcolor: '#667eea', borderRadius: 2 },
-            }}
-          >
-            <Tab label="Sign In" />
-            <Tab label="Register" />
-          </Tabs>
-
-          {error && <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>{error}</Alert>}
+          {error && <Alert severity="error" sx={{ mb: 3, borderRadius: 2 }}>{error}</Alert>}
 
           <form onSubmit={handleSubmit}>
-            <TextField
-              fullWidth name="username" label="Username" value={form.username}
-              onChange={handleChange} required margin="dense" size="medium"
-              InputProps={{
-                startAdornment: <InputAdornment position="start"><PersonIcon sx={{ color: 'text.disabled' }} /></InputAdornment>,
-              }}
-              sx={{ mb: 2, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-            />
 
-            {tab === 1 && (
-              <TextField
-                fullWidth name="email" label="Email" type="email" value={form.email}
-                onChange={handleChange} required margin="dense"
-                InputProps={{
-                  startAdornment: <InputAdornment position="start"><EmailIcon sx={{ color: 'text.disabled' }} /></InputAdornment>,
-                }}
-                sx={{ mb: 2, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-              />
-            )}
-
+            {/* Username */}
             <TextField
-              fullWidth name="password" label="Password" value={form.password}
-              onChange={handleChange} required margin="dense"
-              type={showPassword ? 'text' : 'password'}
+              fullWidth
+              name="username"
+              placeholder={mode === 'login' ? 'Username or Email' : 'Full Name'}
+              value={form.username}
+              onChange={handleChange}
+              sx={{ mb: 2.5 }}
               InputProps={{
-                startAdornment: <InputAdornment position="start"><LockIcon sx={{ color: 'text.disabled' }} /></InputAdornment>,
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton onClick={() => setShowPassword(!showPassword)} edge="end" size="small">
-                      {showPassword ? <VisibilityOff /> : <Visibility />}
-                    </IconButton>
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <PersonIcon sx={{ color: '#94A3B8' }} />
                   </InputAdornment>
                 ),
               }}
-              sx={{ mb: 3, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+            />
+
+            {/* Email (only register) */}
+            {mode === 'register' && (
+              <TextField
+                fullWidth
+                name="email"
+                placeholder="Email Address"
+                value={form.email}
+                onChange={handleChange}
+                sx={{ mb: 2.5 }}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <EmailIcon sx={{ color: '#94A3B8' }} />
+                    </InputAdornment>
+                  ),
+                }}
+              />
+            )}
+
+            {/* Password */}
+            <TextField
+              fullWidth
+              name="password"
+              placeholder="Password"
+              type={showPassword ? 'text' : 'password'}
+              value={form.password}
+              onChange={handleChange}
+              sx={{ mb: 4 }}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <LockIcon sx={{ color: '#94A3B8' }} />
+                  </InputAdornment>
+                ),
+                endAdornment: (
+                  <IconButton onClick={() => setShowPassword(!showPassword)} edge="end">
+                    {showPassword ? <VisibilityOff sx={{ color: '#94A3B8' }} /> : <Visibility sx={{ color: '#94A3B8' }} />}
+                  </IconButton>
+                ),
+              }}
             />
 
             <Button
-              type="submit" fullWidth variant="contained" size="large" disabled={loading}
+              fullWidth
+              type="submit"
+              variant="contained"
+              size="large"
+              disabled={loading}
               sx={{
-                py: 1.5, borderRadius: 2, fontWeight: 700, fontSize: '0.95rem',
-                textTransform: 'none',
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                boxShadow: '0 4px 15px rgba(102, 126, 234, 0.4)',
+                py: 1.8,
+                borderRadius: 2,
+                fontWeight: 700,
+                fontSize: '1rem',
+                background: '#0F766E',
+                boxShadow: 'none',
                 '&:hover': {
-                  background: 'linear-gradient(135deg, #5a6fd6 0%, #6a4190 100%)',
-                  boxShadow: '0 6px 20px rgba(102, 126, 234, 0.5)',
-                },
+                  background: '#0D6D66',
+                  boxShadow: '2px 2px 0px 0px #134E4A',
+                  transform: 'translate(-1px, -1px)',
+                }
               }}
             >
-              {loading ? <CircularProgress size={24} sx={{ color: '#fff' }} /> : (tab === 0 ? 'Sign In' : 'Create Account')}
+              {loading
+                ? <CircularProgress size={24} color="inherit" />
+                : mode === 'login' ? 'Sign In' : 'Create Account'}
             </Button>
           </form>
 
-          {tab === 0 && (
-            <Box sx={{ mt: 3, p: 2, bgcolor: '#f8fafc', borderRadius: 2, border: '1px solid #e2e8f0' }}>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, fontWeight: 600 }}>
-                Demo Credentials
+          {/* TOGGLE */}
+          <Box sx={{ mt: 4, textAlign: 'center' }}>
+            <Typography sx={{ color: '#64748B' }}>
+              {mode === 'login' ? "Don't have an account?" : "Already have an account?"}{' '}
+              <Typography
+                component="span"
+                sx={{ 
+                  color: '#0F766E', 
+                  fontWeight: 600, 
+                  cursor: 'pointer',
+                  '&:hover': { textDecoration: 'underline' }
+                }}
+                onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
+              >
+                {mode === 'login' ? 'Create Account' : 'Sign In'}
               </Typography>
-              <Typography variant="caption" color="text.secondary" component="div" sx={{ fontFamily: 'monospace' }}>
-                Username: admin &nbsp;|&nbsp; Password: admin123
-              </Typography>
-            </Box>
-          )}
-        </CardContent>
-      </Card>
+            </Typography>
+          </Box>
+        </Box>
+      </Box>
     </Box>
   );
 }

@@ -1,14 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Box, Button, Typography, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, Paper, IconButton, Dialog, DialogTitle, DialogContent,
-  DialogActions, TextField, Snackbar, Alert, Chip, CircularProgress,
+  DialogActions, TextField, Snackbar, Alert, Chip, LinearProgress,
   FormControl, InputLabel, Select, MenuItem, Tooltip, InputAdornment,
-  TablePagination,
+  TablePagination, useTheme,
 } from '@mui/material';
 import {
   Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon,
-  Search as SearchIcon, Groups as GroupsIcon,
+  Search as SearchIcon, Groups as GroupsIcon, WarningAmber as WarningAmberIcon,
 } from '@mui/icons-material';
 import teamsService from '../services/teamsService';
 import individualsService from '../services/individualsService';
@@ -18,6 +18,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 const EMPTY_FORM = { name: '', description: '', location: '', leader_id: '', org_leader_id: '' };
 
 export default function TeamsPage() {
+  const theme = useTheme();
   const [teams, setTeams] = useState([]);
   const [individuals, setIndividuals] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -34,31 +35,36 @@ export default function TeamsPage() {
 
   useEffect(() => { loadData(); }, []);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       const [t, ind] = await Promise.all([
-        teamsService.getAll(),
-        individualsService.getAll().catch(() => []),
+        teamsService.getAll().catch((err) => { console.error('Teams fetch error:', err?.response?.data || err); return []; }),
+        individualsService.getAll().catch((err) => { console.error('Individuals fetch error:', err?.response?.data || err); return []; }),
       ]);
-      setTeams(t);
-      setIndividuals(ind);
-    } catch {
+      setTeams(Array.isArray(t) ? t : []);
+      setIndividuals(Array.isArray(ind) ? ind : []);
+    } catch (err) {
+      console.error('loadData error:', err);
       showSnack('Failed to load data', 'error');
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const filtered = teams.filter(t =>
-    !search || `${t.name} ${t.description} ${t.location}`.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = useMemo(() =>
+    (teams || []).filter(t =>
+      !search || `${t.name || ''} ${t.description || ''} ${t.location || ''}`.toLowerCase().includes(search.toLowerCase())
+    ), [teams, search]);
 
-  const handleOpen = (team = null) => {
+  const handleOpen = useCallback((team = null) => {
     if (team) {
       setEditingId(team.id);
       setForm({
-        name: team.name || '', description: team.description || '', location: team.location || '',
-        leader_id: team.leader_id || '', org_leader_id: team.org_leader_id || '',
+        name: team.name || '',
+        description: team.description || '',
+        location: team.location || '',
+        leader_id: team.leader_id || '',
+        org_leader_id: team.org_leader_id || '',
       });
     } else {
       setEditingId(null);
@@ -66,11 +72,11 @@ export default function TeamsPage() {
     }
     setErrors({});
     setDialogOpen(true);
-  };
+  }, []);
 
   const validate = () => {
     const e = {};
-    if (!form.name.trim()) e.name = 'Required';
+    if (!form.name?.trim()) e.name = 'Team name is required';
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -79,22 +85,34 @@ export default function TeamsPage() {
     if (!validate()) return;
     setSaving(true);
     try {
-      const data = {
-        ...form,
+      const payload = {
+        name: form.name.trim(),
+        description: (form.description || '').trim(),
+        location: (form.location || '').trim(),
         leader_id: form.leader_id || null,
         org_leader_id: form.org_leader_id || null,
       };
+
       if (editingId) {
-        await teamsService.update(editingId, data);
+        await teamsService.update(editingId, payload);
         showSnack('Team updated successfully');
       } else {
-        await teamsService.create(data);
+        await teamsService.create(payload);
         showSnack('Team created successfully');
       }
       setDialogOpen(false);
-      loadData();
+      setErrors({});
+      await loadData();
     } catch (err) {
-      showSnack(err.response?.data?.error || 'Operation failed', 'error');
+      console.error('Save error:', err?.response?.data || err?.message || err);
+      // Show the specific message from backend (contains actual SQL/validation error), not the generic "Internal server error"
+      const serverData = err?.response?.data;
+      const msg = serverData?.message
+        || (Array.isArray(serverData?.details) ? serverData.details.join(', ') : null)
+        || serverData?.error
+        || err?.message
+        || 'Operation failed';
+      showSnack(msg, 'error');
     } finally {
       setSaving(false);
     }
@@ -105,58 +123,75 @@ export default function TeamsPage() {
       await teamsService.delete(deleteTarget);
       showSnack('Team deleted');
       setDeleteTarget(null);
-      loadData();
-    } catch {
-      showSnack('Delete failed', 'error');
+      await loadData();
+    } catch (err) {
+      console.error('Delete error:', err?.response?.data || err?.message);
+      showSnack(err?.response?.data?.error || 'Delete failed', 'error');
+      setDeleteTarget(null);
     }
   };
 
+  const handleCloseSnack = useCallback(() => setSnack(prev => ({ ...prev, open: false })), []);
   const showSnack = (message, severity = 'success') => setSnack({ open: true, message, severity });
-  const getPersonName = (id) => {
+
+  const getPersonName = useCallback((id) => {
+    if (!id) return '—';
     const p = individuals.find(i => i.id === id);
     return p ? `${p.first_name} ${p.last_name}` : '—';
-  };
+  }, [individuals]);
 
   return (
-    <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, flexWrap: 'wrap', gap: 2 }}>
-        <Box>
-          <Typography variant="h5" sx={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: 1 }}>
-            <GroupsIcon sx={{ color: '#f5576c' }} /> Teams
-          </Typography>
-          <Typography variant="body2" color="text.secondary">Manage teams and their structure</Typography>
+    <Box className="page-fade-in">
+      {/* HEADER */}
+      <Paper sx={{ mb: 3, p: 3, borderRadius: 3, borderLeft: '6px solid #0F766E', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+          <Box sx={{
+            width: 48, height: 48, borderRadius: '12px',
+            background: '#0F766E',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <GroupsIcon sx={{ color: '#fff' }} />
+          </Box>
+          <Box>
+            <Typography variant="h5" fontWeight={800}>Squads</Typography>
+            <Typography variant="body2" color="text.secondary">Organize and manage your squad hierarchy</Typography>
+          </Box>
         </Box>
         {authService.canCreate() && (
           <Button variant="contained" startIcon={<AddIcon />} onClick={() => handleOpen()}
+            aria-label="Create a new squad"
             sx={{
               borderRadius: 2, textTransform: 'none', fontWeight: 600, px: 3,
-              background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
-              boxShadow: '0 4px 14px rgba(245,87,108,0.4)',
+              background: '#0F766E',
+              boxShadow: 'none',
+              '&:hover': { boxShadow: '2px 2px 0px 0px #134E4A', transform: 'translate(-1px, -1px)' },
             }}
           >
-            Add Team
+            New Team
           </Button>
         )}
-      </Box>
+      </Paper>
 
+      {/* TABLE */}
       <Paper sx={{ borderRadius: 3, overflow: 'hidden' }}>
         <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
-          <TextField size="small" placeholder="Search teams..." value={search}
+          <TextField size="small" placeholder="Type to search..." value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(0); }}
+            aria-label="Search teams"
             InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon sx={{ color: 'text.disabled' }} /></InputAdornment> }}
             sx={{ minWidth: 280, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
           />
         </Box>
 
         {loading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', p: 6 }}><CircularProgress /></Box>
+          <LinearProgress aria-label="Fetching data..." sx={{ mx: 2, my: 4 }} />
         ) : (
           <>
             <TableContainer>
               <Table>
                 <TableHead>
-                  <TableRow sx={{ '& th': { fontWeight: 700, bgcolor: '#f8fafc', color: 'text.secondary', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: 0.5 } }}>
-                    <TableCell>Team Name</TableCell>
+                  <TableRow sx={{ '& th': { fontWeight: 700, bgcolor: 'action.hover', color: 'text.secondary', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: 0.5 } }}>
+                    <TableCell>Squad Name</TableCell>
                     <TableCell>Description</TableCell>
                     <TableCell>Location</TableCell>
                     <TableCell>Leader</TableCell>
@@ -169,7 +204,10 @@ export default function TeamsPage() {
                   {filtered.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={7} sx={{ textAlign: 'center', py: 6 }}>
-                        <Typography color="text.secondary">No teams found</Typography>
+                        <GroupsIcon sx={{ fontSize: 48, color: 'text.disabled', mb: 1 }} />
+                        <Typography color="text.secondary" display="block">
+                          {search ? 'No matching squads found' : 'No squads created yet'}
+                        </Typography>
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -179,24 +217,52 @@ export default function TeamsPage() {
                           <Typography variant="subtitle2" fontWeight={600}>{team.name}</Typography>
                         </TableCell>
                         <TableCell>
-                          <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <Typography variant="body2" color="text.secondary"
+                            sx={{ maxWidth: 250, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {team.description || '—'}
                           </Typography>
                         </TableCell>
-                        <TableCell><Typography variant="body2" color="text.secondary">{team.location || '—'}</Typography></TableCell>
-                        <TableCell><Typography variant="body2" color="text.secondary">{getPersonName(team.leader_id)}</Typography></TableCell>
-                        <TableCell><Typography variant="body2" color="text.secondary">{getPersonName(team.org_leader_id)}</Typography></TableCell>
+                        <TableCell>
+                          <Typography variant="body2" color="text.secondary">{team.location || '—'}</Typography>
+                        </TableCell>
+                        <TableCell>
+                          {team.leader_id ? (
+                            <Typography variant="body2" color="text.secondary">{getPersonName(team.leader_id)}</Typography>
+                          ) : (
+                            <Chip
+                              icon={<WarningAmberIcon />}
+                              label="No Leader"
+                              color="warning"
+                              size="small"
+                              variant="outlined"
+                              sx={{ borderRadius: 1.5 }}
+                            />
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2" color="text.secondary">{getPersonName(team.org_leader_id)}</Typography>
+                        </TableCell>
                         <TableCell align="center">
                           <Chip label={team.member_count || 0} size="small"
-                            sx={{ fontWeight: 700, bgcolor: '#ede9fe', color: '#7c3aed', minWidth: 36 }} />
+                            sx={{ fontWeight: 700, bgcolor: '#CCFBF1', color: '#0F766E', border: '1px solid #99F6E4', minWidth: 36 }} />
                         </TableCell>
                         {(authService.canUpdate() || authService.canDelete()) && (
                           <TableCell align="right">
                             {authService.canUpdate() && (
-                              <Tooltip title="Edit"><IconButton size="small" onClick={() => handleOpen(team)} sx={{ color: '#667eea' }}><EditIcon fontSize="small" /></IconButton></Tooltip>
+                              <Tooltip title="Modify">
+                                <IconButton size="small" onClick={() => handleOpen(team)}
+                                  aria-label={`Modify ${team.name}`} sx={{ bgcolor: '#F0FDFA', color: '#0F766E' }}>
+                                  <EditIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
                             )}
                             {authService.canDelete() && (
-                              <Tooltip title="Delete"><IconButton size="small" onClick={() => setDeleteTarget(team.id)} sx={{ color: '#ef4444' }}><DeleteIcon fontSize="small" /></IconButton></Tooltip>
+                              <Tooltip title="Remove">
+                                <IconButton size="small" onClick={() => setDeleteTarget(team.id)}
+                                  aria-label={`Remove ${team.name}`} sx={{ bgcolor: '#FFF1F2', color: '#BE123C' }}>
+                                  <DeleteIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
                             )}
                           </TableCell>
                         )}
@@ -213,11 +279,13 @@ export default function TeamsPage() {
         )}
       </Paper>
 
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 3 } }}>
+      {/* CREATE/EDIT DIALOG */}
+      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth
+        PaperProps={{ sx: { borderRadius: 3 } }}>
         <DialogTitle sx={{ fontWeight: 700 }}>{editingId ? 'Edit Team' : 'Add Team'}</DialogTitle>
         <DialogContent sx={{ pt: '16px !important' }}>
-          <TextField fullWidth label="Team Name" value={form.name} required
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
+          <TextField fullWidth label="Squad Name" value={form.name} required
+            onChange={(e) => { setForm({ ...form, name: e.target.value }); setErrors(p => ({ ...p, name: undefined })); }}
             error={!!errors.name} helperText={errors.name}
             sx={{ mb: 2, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
           />
@@ -231,10 +299,9 @@ export default function TeamsPage() {
           />
           <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
             <FormControl fullWidth sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}>
-              <InputLabel>Team Leader</InputLabel>
-              <Select value={form.leader_id} label="Team Leader"
-                onChange={(e) => setForm({ ...form, leader_id: e.target.value })}
-              >
+              <InputLabel>Squad Leader</InputLabel>
+              <Select value={form.leader_id} label="Squad Leader"
+                onChange={(e) => setForm({ ...form, leader_id: e.target.value })}>
                 <MenuItem value="">None</MenuItem>
                 {individuals.map(i => <MenuItem key={i.id} value={i.id}>{i.first_name} {i.last_name}</MenuItem>)}
               </Select>
@@ -242,8 +309,7 @@ export default function TeamsPage() {
             <FormControl fullWidth sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}>
               <InputLabel>Org Leader</InputLabel>
               <Select value={form.org_leader_id} label="Org Leader"
-                onChange={(e) => setForm({ ...form, org_leader_id: e.target.value })}
-              >
+                onChange={(e) => setForm({ ...form, org_leader_id: e.target.value })}>
                 <MenuItem value="">None</MenuItem>
                 {individuals.map(i => <MenuItem key={i.id} value={i.id}>{i.first_name} {i.last_name}</MenuItem>)}
               </Select>
@@ -251,22 +317,27 @@ export default function TeamsPage() {
           </Box>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setDialogOpen(false)} sx={{ borderRadius: 2 }}>Cancel</Button>
+          <Button onClick={() => setDialogOpen(false)} sx={{ borderRadius: 2 }}>Dismiss</Button>
           <Button variant="contained" onClick={handleSave} disabled={saving}
-            sx={{ borderRadius: 2, background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)' }}
+            sx={{
+              borderRadius: 2,
+              background: '#0F766E',
+            }}
           >
-            {saving ? <CircularProgress size={20} sx={{ color: '#fff' }} /> : (editingId ? 'Update' : 'Create')}
+            {saving ? <LinearProgress sx={{ width: 60, height: 3 }} /> : 'Confirm'}
           </Button>
         </DialogActions>
       </Dialog>
 
+      {/* DELETE CONFIRM */}
       <ConfirmDialog open={!!deleteTarget} title="Delete Team"
         message="Are you sure you want to delete this team? All member associations will be removed."
         onConfirm={handleDelete} onCancel={() => setDeleteTarget(null)} />
 
-      <Snackbar open={snack.open} autoHideDuration={4000} onClose={() => setSnack({ ...snack, open: false })}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}>
-        <Alert severity={snack.severity} onClose={() => setSnack({ ...snack, open: false })} sx={{ borderRadius: 2 }}>{snack.message}</Alert>
+      {/* SNACKBAR */}
+      <Snackbar open={snack.open} autoHideDuration={4000} onClose={handleCloseSnack}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}>
+        <Alert severity={snack.severity} onClose={handleCloseSnack} sx={{ borderRadius: 2 }}>{snack.message}</Alert>
       </Snackbar>
     </Box>
   );

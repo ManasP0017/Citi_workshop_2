@@ -1,4 +1,5 @@
 # Coding Workshop
+<img width="1024" height="1536" alt="WhatsApp Image 2026-04-16 at 10 54 24 PM" src="https://github.com/user-attachments/assets/59925890-0cac-4f1e-85ca-b54843487e42" />
 
 The goal of this coding workshop is to enable and assess the hands-on skills
 of participants through development of a practical technical solution that
